@@ -1,0 +1,39 @@
+workflows:
+  flutter-android:
+    name: Build Android APK
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      groups:
+        - openai  # define OPENAI_API_KEY here in Codemagic UI
+    scripts:
+      - name: Prepare Flutter project
+        script: |
+          if [ ! -f "pubspec.yaml" ]; then
+            echo "Missing pubspec.yaml"; exit 1;
+          fi
+          # Create full flutter skeleton and overwrite with our sources
+          flutter create . --org com.nova.app --project-name nova --platforms=android --overwrite
+          echo "Applying our lib/ and pubspec.yaml"
+          rm -rf lib
+          mkdir -p lib
+          cp -r $CM_SOURCE_DIR/lib/* lib/ || true
+          cp $CM_SOURCE_DIR/pubspec.yaml pubspec.yaml
+          flutter pub get
+          # Add permissions to AndroidManifest
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+            awk 'NR==1{print; print "    <uses-permission android:name=\"android.permission.INTERNET\"/>"; print "    <uses-permission android:name=\"android.permission.RECORD_AUDIO\"/>"; next}1' "$MANIFEST" > tmp_manifest.xml && mv tmp_manifest.xml "$MANIFEST"
+          fi
+      - name: Build APK (release)
+        script: |
+          flutter build apk --release --dart-define=OPENAI_API_KEY=${OPENAI_API_KEY}
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk
+    publishing:
+      email:
+        recipients:
+          - ${CM_EMAIL}
+        notify:
+          success: true
+          failure: true
